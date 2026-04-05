@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0f172a">
+  <title>Voice Reminder</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e2937 100%);
+      color: #e2e8f0; min-height: 100vh;
+    }
+
+    .container { max-width: 460px; margin: 0 auto; padding: 20px 16px 40px; }
+
+    h1 {
+      text-align: center; font-size: 26px; margin: 14px 0 4px;
+      color: #60a5fa; text-shadow: 0 0 20px rgba(96,165,250,0.3);
+    }
+
+    .live-time {
+      text-align: center; font-size: 20px; font-weight: 500; color: #94a3b8;
+      margin: 8px 0 10px; letter-spacing: 2px;
+    }
+
+    /* ── Status badge ── */
+    #statusBar {
+      display: block; text-align: center; font-size: 11px; font-weight: 600;
+      padding: 5px 12px; border-radius: 20px; margin: 0 auto 20px;
+      letter-spacing: 0.4px; max-width: 320px;
+    }
+    .s-ok   { background: rgba(34,197,94,0.18); color: #4ade80; border: 1px solid rgba(74,222,128,0.3); }
+    .s-warn { background: rgba(250,204,21,0.18); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+    .s-off  { background: rgba(239,68,68,0.18);  color: #f87171; border: 1px solid rgba(248,113,113,0.3); }
+
+    /* ── Card (form + reminders) ── */
+    .card {
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px; padding: 22px 20px; margin-bottom: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .card-title {
+      font-size: 13px; font-weight: 700; letter-spacing: 1px; color: #64748b;
+      text-transform: uppercase; margin: 0 0 18px;
+    }
+
+    /* ── Floating label inputs ── */
+    .field { position: relative; margin: 24px 0 6px; }
+    .field input {
+      width: 100%; padding: 10px 0 8px; font-size: 16px;
+      background: transparent; border: none; border-bottom: 2px solid #334155;
+      color: white; outline: none; transition: border-color 0.25s;
+    }
+    .field input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
+    .field input:focus { border-bottom-color: #60a5fa; }
+    .field label {
+      position: absolute; left: 0; top: 11px; font-size: 15px; color: #64748b;
+      pointer-events: none; transition: all 0.25s;
+    }
+    .field input:focus ~ label,
+    .field input:not(:placeholder-shown) ~ label {
+      top: -8px; font-size: 11px; color: #60a5fa; font-weight: 600; letter-spacing: 0.5px;
+    }
+    .field-row { display: flex; gap: 12px; }
+    .field-row .field { flex: 1; }
+    .field-row .field.narrow { flex: 0 0 100px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 13px 18px; font-size: 15px; font-weight: 600; border: none;
+      border-radius: 12px; cursor: pointer; transition: all 0.2s; width: 100%;
+      margin-top: 14px;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary { background: #3b82f6; color: white; box-shadow: 0 6px 18px rgba(59,130,246,0.4); }
+    .btn-secondary { background: rgba(255,255,255,0.08); color: #cbd5e1; margin-top: 8px; }
+    .btn-danger  { background: rgba(239,68,68,0.2);  color: #f87171; }
+    .btn-success { background: rgba(34,197,94,0.2);  color: #4ade80; }
+    .btn-sm { width: auto; padding: 5px 12px; font-size: 13px; margin-top: 0; border-radius: 8px; }
+
+    /* ── JSON toolbar ── */
+    .json-row { display: flex; gap: 10px; margin-top: 4px; }
+    .json-row .btn { margin-top: 0; }
+
+    /* ── Reminder cards ── */
+    ul { list-style: none; padding: 0; margin: 0; }
+    li.reminder-item {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+      padding: 16px; margin: 10px 0; border-radius: 16px;
+      border-left: 4px solid #60a5fa; transition: transform 0.2s;
+    }
+    li.reminder-item:hover { transform: translateX(4px); }
+    .r-title  { font-size: 16px; font-weight: 600; color: #e2e8f0; padding-right: 8px; }
+    .r-meta   { font-size: 12px; color: #64748b; margin-top: 5px; line-height: 1.6; }
+    .r-meta span { margin-right: 10px; }
+    .r-progress {
+      display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 20px; background: rgba(96,165,250,0.15); color: #60a5fa;
+      margin-top: 6px;
+    }
+    .r-progress.done { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .r-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+    /* ── Edit modal ── */
+    #modalOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+      z-index: 200; align-items: center; justify-content: center;
+    }
+    #modalOverlay.open { display: flex; }
+    #modalBox {
+      background: #1a2535; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 22px; padding: 28px 24px; width: 92%; max-width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.6); animation: popIn 0.2s ease;
+    }
+    @keyframes popIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    #modalBox h3 { margin: 0 0 4px; color: #60a5fa; font-size: 18px; }
+    #modalBox p  { margin: 0 0 18px; font-size: 12px; color: #64748b; }
+    .modal-btns  { display: flex; gap: 10px; margin-top: 20px; }
+    .modal-btns .btn { margin-top: 0; }
+
+    /* ── Toast ── */
+    #toastContainer {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 300; display: flex; flex-direction: column; gap: 8px; align-items: center;
+      pointer-events: none; width: 90%; max-width: 400px;
+    }
+    .toast {
+      background: #1e3a5f; border: 1px solid #3b82f6; color: #e2e8f0;
+      padding: 12px 18px; border-radius: 12px; font-size: 14px; font-weight: 500;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); animation: slideUp 0.3s ease;
+      text-align: center; width: 100%;
+    }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* ── Empty state ── */
+    .empty { text-align: center; color: #475569; padding: 28px 0; font-size: 14px; }
+
+    /* ── DB stats ── */
+    .db-stats { font-size: 11px; color: #475569; text-align: right; margin-top: 6px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>⏰ Voice Reminder</h1>
+  <div class="live-time" id="liveTime"></div>
+  <span id="statusBar" class="s-off">Loading…</span>
+
+  <!-- ── Add reminder form ── -->
+  <div class="card">
+    <div class="card-title">New Reminder</div>
+    <div class="field">
+      <input type="text" id="addTitle" placeholder=" " autocomplete="off">
+      <label>Reminder title</label>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <input type="datetime-local" id="addTime" placeholder=" ">
+        <label>Date &amp; Time</label>
+      </div>
+      <div class="field narrow">
+        <input type="number" id="addRepeat" placeholder=" " min="1" max="99" value="3">
+        <label>Repeat ×</label>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="addReminder()">＋ Set Reminder</button>
+  </div>
+
+  <!-- ── JSON Database toolbar ── -->
+  <div class="card">
+    <div class="card-title">JSON Database</div>
+    <div class="json-row">
+      <button class="btn btn-success" onclick="exportDB()">⬇ Export JSON</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">⬆ Import JSON</button>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="importDB(this)">
+    <div class="db-stats" id="dbStats"></div>
+  </div>
+
+  <!-- ── Reminders list ── -->
+  <div class="card">
+    <div class="card-title">Your Reminders</div>
+    <ul id="list"></ul>
+    <div class="empty" id="emptyMsg" style="display:none">No reminders yet. Add one above!</div>
+  </div>
+
+</div>
+
+<!-- ── Edit modal ── -->
+<div id="modalOverlay" onclick="handleOverlayClick(event)">
+  <div id="modalBox">
+    <h3>Edit Reminder</h3>
+    <p>Update title, time or repeat count</p>
+    <div class="field">
+      <input type="text" id="editTitle" placeholder=" " autocomplete="off">
+      <label>Reminder title</label>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <input type="datetime-local" id="editTime" placeholder=" ">
+        <label>Date &amp; Time</label>
+      </div>
+      <div class="field narrow">
+        <input type="number" id="editRepeat" placeholder=" " min="1" max="99">
+        <label>Repeat ×</label>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container ── -->
+<div id="toastContainer"></div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JSON DATABASE  (localStorage-backed, versioned schema)
+// ═══════════════════════════════════════════════════════════════════════════
+const DB_KEY = 'voice_reminder_db_v2';
+
+function getDB() {
+  try {
+    const raw = localStorage.getItem(DB_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return { version: 2, reminders: [] };
+}
+
+function saveDB(db) {
+  localStorage.setItem(DB_KEY, JSON.stringify(db));
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// Live reference — always in sync with DB
+let db = getDB();
+// Migrate from old key if needed
+(function migrate() {
+  const old = localStorage.getItem('reminders');
+  if (!old) return;
+  try {
+    const arr = JSON.parse(old);
+    if (Array.isArray(arr) && arr.length) {
+      arr.forEach(r => {
+        if (!r.id) r.id = uid();
+        if (!r.repeat) r.repeat = 3;
+        if (!db.reminders.find(x => x.id === r.id)) db.reminders.push(r);
+      });
+      saveDB(db);
+    }
+  } catch (_) {}
+  localStorage.removeItem('reminders');
+})();
+
+function persist() {
+  saveDB(db);
+  updateDbStats();
+  syncToSW();
+  render();
+}
+
+// ─── Export ──────────────────────────────────────────────────────────────────
+window.exportDB = function () {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: 'reminders.json' });
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('✓ Exported ' + db.reminders.length + ' reminder(s)');
+};
+
+// ─── Import ──────────────────────────────────────────────────────────────────
+window.importDB = function (input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      // Accept both {reminders:[]} and bare []
+      const incoming = Array.isArray(parsed) ? parsed : (parsed.reminders || []);
+      const existIds = new Set(db.reminders.map(r => r.id));
+      let added = 0;
+      incoming.forEach(r => {
+        if (!r.id) r.id = uid();
+        if (!r.repeat) r.repeat = 3;
+        if (!r.triggerCount) r.triggerCount = 0;
+        if (!existIds.has(r.id)) { db.reminders.push(r); added++; }
+      });
+      persist();
+      toast('✓ Imported ' + added + ' new reminder(s)');
+    } catch (_) {
+      toast('✗ Invalid JSON file', true);
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+};
+
+function updateDbStats() {
+  const total  = db.reminders.length;
+  const active = db.reminders.filter(r => (r.triggerCount || 0) < (r.repeat || 3)).length;
+  const done   = total - active;
+  document.getElementById('dbStats').textContent =
+    total + ' total · ' + active + ' active · ' + done + ' completed';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERVICE WORKER  (background notifications — needs HTTPS or localhost)
+// ═══════════════════════════════════════════════════════════════════════════
+let swReg = null;
+
+async function initSW() {
+  const isFileOrigin = location.protocol === 'file:';
+  if (isFileOrigin) {
+    setStatus('warn', '⚠ File:// mode — background notifications off. Host on HTTPS for full features.');
+    return;
+  }
+  if (!('serviceWorker' in navigator)) {
+    setStatus('off', '✗ Service workers not supported in this browser');
+    return;
+  }
+  try {
+    swReg = await navigator.serviceWorker.register('./sw.js');
+    await navigator.serviceWorker.ready;
+    setStatus('ok', '✓ Background mode active — fires even when screen is locked');
+
+    navigator.serviceWorker.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'SPEAK') speak('Reminder: ' + e.data.title);
+    });
+
+    // Re-sync on tab focus (SW may have been killed)
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) syncToSW(); });
+
+    // Keep SW alive while page is open
+    setInterval(() => postSW({ type: 'PING' }), 20000);
+
+    syncToSW();
+  } catch (err) {
+    console.warn('SW failed:', err);
+    setStatus('warn', '⚠ SW failed — keep app open. Is sw.js in the same folder?');
+  }
+}
+
+function postSW(msg) {
+  const ctrl = navigator.serviceWorker && navigator.serviceWorker.controller;
+  if (ctrl) ctrl.postMessage(msg);
+}
+
+function syncToSW() {
+  postSW({ type: 'SYNC_REMINDERS', reminders: db.reminders });
+}
+
+function setStatus(level, text) {
+  const el = document.getElementById('statusBar');
+  el.textContent = text;
+  el.className   = level === 'ok' ? 's-ok' : level === 'warn' ? 's-warn' : 's-off';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+async function ensurePermission() {
+  if (!('Notification' in window)) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied')  return false;
+  return (await Notification.requestPermission()) === 'granted';
+}
+
+function sendNotification(r) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const opts = { body: 'Your reminder is due', vibrate: [300,100,300], requireInteraction: true };
+  if (swReg && swReg.active) {
+    swReg.showNotification('⏰ ' + r.title, opts);
+  } else {
+    new Notification('⏰ ' + r.title, opts);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUDIO BEEP  (WebView / no-speech fallback via Web Audio API)
+// ═══════════════════════════════════════════════════════════════════════════
+function beep() {
+  try {
+    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine'; osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.6, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+    osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 1.2);
+  } catch (_) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SPEECH SYNTHESIS  (Chrome-specific fixes applied)
+// ═══════════════════════════════════════════════════════════════════════════
+let voices = [], isSpeaking = false, speechQ = [], keepAlive = null;
+
+function loadVoices() { voices = window.speechSynthesis.getVoices(); }
+if ('speechSynthesis' in window) { loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
+
+function startKA() {
+  stopKA();
+  keepAlive = setInterval(() => {
+    if (window.speechSynthesis.speaking) { window.speechSynthesis.pause(); window.speechSynthesis.resume(); }
+    else stopKA();
+  }, 14000);
+}
+function stopKA() { clearInterval(keepAlive); keepAlive = null; }
+
+function processQ() {
+  if (isSpeaking || !speechQ.length) return;
+  isSpeaking = true;
+  const text = speechQ.shift();
+  window.speechSynthesis.cancel();
+  setTimeout(() => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate  = 0.92; u.lang = 'en-US';
+    const v = voices.find(v => v.lang.startsWith('en') && v.localService)
+           || voices.find(v => v.lang.startsWith('en')) || voices[0];
+    if (v) u.voice = v;
+    u.onend  = () => { isSpeaking = false; stopKA(); processQ(); };
+    u.onerror = () => { isSpeaking = false; stopKA(); processQ(); };
+    startKA();
+    window.speechSynthesis.speak(u);
+  }, 100);
+}
+
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  speechQ.push(text);
+  processQ();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// IN-PAGE CHECKER  (fallback when SW is unavailable or killed)
+// ═══════════════════════════════════════════════════════════════════════════
+function checkReminders() {
+  const now     = Date.now();
+  let   changed = false;
+
+  db.reminders.forEach(r => {
+    const limit = r.repeat || 3;
+    if (r.time <= now && (r.triggerCount || 0) < limit) {
+      speak('Reminder: ' + r.title);
+      beep();
+      sendNotification(r);
+      toast('⏰ ' + r.title);
+      r.triggerCount = (r.triggerCount || 0) + 1;
+      changed = true;
+    }
+  });
+
+  // Remove fully completed reminders
+  const before = db.reminders.length;
+  db.reminders = db.reminders.filter(r => {
+    const limit = r.repeat || 3;
+    return r.time > now || (r.triggerCount || 0) < limit;
+  });
+  if (changed || db.reminders.length !== before) persist();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CRUD
+// ═══════════════════════════════════════════════════════════════════════════
+window.addReminder = async function () {
+  const title     = document.getElementById('addTitle').value.trim();
+  const timeStr   = document.getElementById('addTime').value;
+  const repeatVal = parseInt(document.getElementById('addRepeat').value) || 3;
+
+  if (!title)   return toast('✗ Please enter a title', true);
+  if (!timeStr) return toast('✗ Please pick a date & time', true);
+  const time = new Date(timeStr).getTime();
+  if (isNaN(time) || time <= Date.now()) return toast('✗ Please choose a future time', true);
+  if (repeatVal < 1 || repeatVal > 99)  return toast('✗ Repeat must be 1–99', true);
+
+  const granted = await ensurePermission();
+  if (!granted) toast('⚠ Notifications blocked — speech still works when app is open');
+
+  db.reminders.push({
+    id:           uid(),
+    title,
+    time,
+    repeat:       repeatVal,
+    triggerCount: 0,
+    createdAt:    Date.now()
+  });
+  persist();
+  document.getElementById('addTitle').value  = '';
+  document.getElementById('addTime').value   = '';
+  document.getElementById('addRepeat').value = '3';
+  toast('✓ Reminder set — fires ' + repeatVal + 'x');
+};
+
+window.deleteReminder = function (id) {
+  db.reminders = db.reminders.filter(r => r.id !== id);
+  persist();
+  toast('Reminder deleted');
+};
+
+// ── Edit modal ────────────────────────────────────────────────────────────────
+let editingId = null;
+
+window.openEdit = function (id) {
+  const r = db.reminders.find(r => r.id === id);
+  if (!r) return;
+  editingId = id;
+  document.getElementById('editTitle').value  = r.title;
+  document.getElementById('editTime').value   = toLocalInputValue(r.time);
+  document.getElementById('editRepeat').value = r.repeat || 3;
+  document.getElementById('modalOverlay').classList.add('open');
+};
+
+window.saveEdit = function () {
+  const r = db.reminders.find(r => r.id === editingId);
+  if (!r) return closeModal();
+
+  const title     = document.getElementById('editTitle').value.trim();
+  const timeStr   = document.getElementById('editTime').value;
+  const repeatVal = parseInt(document.getElementById('editRepeat').value) || 3;
+
+  if (!title)   return toast('✗ Title cannot be empty', true);
+  if (!timeStr) return toast('✗ Pick a date & time', true);
+  const time = new Date(timeStr).getTime();
+  if (isNaN(time)) return toast('✗ Invalid date', true);
+
+  r.title        = title;
+  r.time         = time;
+  r.repeat       = repeatVal;
+  r.triggerCount = 0;   // reset progress after edit
+  persist();
+  closeModal();
+  toast('✓ Reminder updated');
+};
+
+window.closeModal = function () {
+  document.getElementById('modalOverlay').classList.remove('open');
+  editingId = null;
+};
+
+window.handleOverlayClick = function (e) {
+  if (e.target === document.getElementById('modalOverlay')) closeModal();
+};
+
+// Convert timestamp to datetime-local input value (local timezone)
+function toLocalInputValue(ts) {
+  const d   = new Date(ts);
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+         'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════════════════════
+function render() {
+  const list  = document.getElementById('list');
+  const empty = document.getElementById('emptyMsg');
+  list.innerHTML = '';
+
+  if (!db.reminders.length) { empty.style.display = ''; return; }
+  empty.style.display = 'none';
+
+  // Sort: active first, then by time ascending
+  const sorted = [...db.reminders].sort((a, b) => {
+    const aDone = (a.triggerCount || 0) >= (a.repeat || 3);
+    const bDone = (b.triggerCount || 0) >= (b.repeat || 3);
+    if (aDone !== bDone) return aDone ? 1 : -1;
+    return a.time - b.time;
+  });
+
+  sorted.forEach(r => {
+    const limit   = r.repeat || 3;
+    const count   = r.triggerCount || 0;
+    const done    = count >= limit;
+    const li      = document.createElement('li');
+    li.className  = 'reminder-item';
+    if (done) li.style.opacity = '0.55';
+    li.innerHTML  = `
+      <div class="r-title">${escHtml(r.title)}</div>
+      <div class="r-meta">
+        <span>📅 ${new Date(r.time).toLocaleString()}</span>
+        <span>🔁 ${count}/${limit}× fired</span>
+      </div>
+      <span class="r-progress${done ? ' done' : ''}">${done ? '✓ Done' : 'Active — ' + (limit - count) + ' left'}</span>
+      <div class="r-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openEdit('${r.id}')">✏ Edit</button>
+        <button class="btn btn-danger btn-sm"    onclick="deleteReminder('${r.id}')">🗑 Delete</button>
+      </div>`;
+    list.appendChild(li);
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function updateLiveTime() {
+  const now = new Date(); let h = now.getHours();
+  const m = now.getMinutes(), s = now.getSeconds();
+  const ap = h >= 12 ? ' PM' : ' AM'; h = h % 12 || 12;
+  document.getElementById('liveTime').textContent =
+    h + ':' + (m<10?'0':'') + m + ':' + (s<10?'0':'') + s + ap;
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+function toast(msg, isError = false) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  if (isError) el.style.borderColor = '#f87171';
+  el.textContent = msg;
+  const container = document.getElementById('toastContainer');
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════════════════
+initSW();
+updateDbStats();
+render();
+setInterval(checkReminders, 5000);
+setInterval(updateLiveTime,  1000);
+updateLiveTime();
+</script>
+</body>
+</html>
